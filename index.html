@@ -90,7 +90,7 @@
 </div>
 <div id="log"></div>
 <div id="testbar">
-  <div style="background:#332446;color:white;border-radius:6px;padding:7px 10px;font:12px system-ui">TEST BUILD v5 · no Twitch events</div>
+  <div style="background:#332446;color:white;border-radius:6px;padding:7px 10px;font:12px system-ui">TEST BUILD v6 · no Twitch events</div>
   <button data-t="start">Start train</button>
   <button data-t="donate">Add progress + passenger</button>
   <button data-t="level">Level up</button>
@@ -270,6 +270,9 @@ function onTrain(d) {
   if (d.percent != null) S.percent = d.percent; else if (d.percentDecimal != null) S.percent = d.percentDecimal * 100;
   S.kind = d.trainType || S.kind;
   const exp = Date.parse(d.expiresAt); if (!isNaN(exp)) S.expires = exp;
+  (d.contributors || []).forEach(c => {
+    if (c.userId) addPax(c.userId, c.user || c.userName, Number(c.total) || 0, true);
+  });
   ['bits', 'subscription', 'other'].forEach(k => {
     const id = pick(d, `top.${k}.userId`); if (id) addPax(id, pick(d, `top.${k}.user`) || pick(d, `top.${k}.userName`), +pick(d, `top.${k}.total`) || 0, true);
   });
@@ -387,7 +390,17 @@ function mapHypeTrain(event) {
     const key = c.type === 'bits' ? 'bits' : c.type === 'subscription' ? 'subscription' : 'other';
     if (!top[key] || c.total > top[key].total) top[key] = { userId: c.user_id, user: c.user_name || c.user_login, userName: c.user_name || c.user_login, total: c.total };
   }
-  return { id: event.id, level: event.level, percent: event.goal ? (event.progress / event.goal) * 100 : 0, expiresAt: event.expires_at, trainType: event.type, top };
+  // Twitch exposes top contributors by category and the latest contribution, not a full roster.
+  // Remember each distinct contributor observed while this overlay is connected.
+  const seen = new Map();
+  for (const c of [...(event.top_contributions || []), event.last_contribution].filter(Boolean)) {
+    if (!c.user_id) continue;
+    const prev = seen.get(String(c.user_id));
+    if (!prev || Number(c.total) > Number(prev.total)) seen.set(String(c.user_id), {
+      userId: String(c.user_id), user: c.user_name || c.user_login || String(c.user_id), total: Number(c.total) || 0
+    });
+  }
+  return { id: event.id, level: event.level, percent: event.goal ? (event.progress / event.goal) * 100 : 0, expiresAt: event.expires_at, trainType: event.type, top, contributors: [...seen.values()] };
 }
 function chatToOverlay(event) {
   const fragments = event.message?.fragments || [], emotes = []; let offset = 0;
