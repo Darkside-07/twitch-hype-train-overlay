@@ -90,6 +90,7 @@
 </div>
 <div id="log"></div>
 <div id="testbar">
+  <div style="background:#332446;color:white;border-radius:6px;padding:7px 10px;font:12px system-ui">TEST BUILD v3 · no Twitch events</div>
   <button data-t="start">Start train</button>
   <button data-t="donate">Add progress + passenger</button>
   <button data-t="level">Level up</button>
@@ -528,19 +529,21 @@ if (cfg.test) {
   $('#disconnectMini').style.display = 'none';
   $('#testbar').style.display = 'flex';
   $('#testbar').addEventListener('click', e => {
-    const t = e.target.dataset.t;
+    const t = e.target.closest('button')?.dataset.t;
+    if (!t) return;
+    console.log('[hypetrain test v3] Button:', t);
     const exp = new Date(Date.now() + 300000).toISOString();
-    if (t === 'start') { testPct = 10; onTrain( { id: 'test', level: 1, percent: 10, expiresAt: exp, trainType: 'regular' }); }
+    if (t === 'start') { testPct = 10; S.active = false; onTrain({ id: 'test-' + Date.now(), level: 1, percent: 10, expiresAt: exp, trainType: 'regular' }); }
     if (t === 'level' && S.active) {
       testPct = 0;
-      onTrain( { id:'test', level:S.level + 1, percent:0, expiresAt:exp });
+      onTrain( { id:S.id, level:S.level + 1, percent:0, expiresAt:exp });
     }
     if (t === 'donate' && S.active) {
       const n = NAMES[Math.floor(Math.random() * NAMES.length)] + Math.floor(Math.random() * 99);
       addPax('u_' + n, n, 100, false); renderPax();
       testPct += 20; let lvl = S.level;
       if (testPct >= 100) { testPct -= 100; lvl++; }
-      onTrain( { id: 'test', level: lvl, percent: testPct, expiresAt: exp });
+      onTrain( { id: S.id, level: lvl, percent: testPct, expiresAt: exp });
     }
     if (t === 'emote' && S.pax.size) {
       const ps = [...S.pax.values()], p = ps[Math.floor(Math.random() * ps.length)], [nm, id] = TEST_EMOTES[Math.floor(Math.random() * TEST_EMOTES.length)];
