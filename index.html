@@ -90,7 +90,7 @@
 </div>
 <div id="log"></div>
 <div id="testbar">
-  <div style="background:#332446;color:white;border-radius:6px;padding:7px 10px;font:12px system-ui">TEST BUILD v3 · no Twitch events</div>
+  <div style="background:#332446;color:white;border-radius:6px;padding:7px 10px;font:12px system-ui">TEST BUILD v4 · no Twitch events</div>
   <button data-t="start">Start train</button>
   <button data-t="donate">Add progress + passenger</button>
   <button data-t="level">Level up</button>
@@ -114,7 +114,7 @@ const cfg = {
   scale: +Q.get('scale') || DEFAULTS.scale, margin: +Q.get('margin') || DEFAULTS.margin,
   sway: Q.get('sway') !== null ? +Q.get('sway') : (DEFAULTS.sway === '' ? null : +DEFAULTS.sway),
   period: +Q.get('period') || DEFAULTS.period, maxCars: +Q.get('maxCars') || DEFAULTS.maxCars, names: Q.get('names') !== '0',
-  hud: Q.get('hud') !== '0', endHold: +Q.get('endHold') || 6000, test: Q.get('test') === '1', settings: Q.get('settings') === '1', debug: Q.get('debug') === '1',
+  hud: Q.get('hud') !== '0', endHold: +Q.get('endHold') || 6000, test: Q.get('test') === '1', simulate: Q.get('simulate') === '1', settings: Q.get('settings') === '1', debug: Q.get('debug') === '1',
 };
 const $ = s => document.querySelector(s);
 const logEl = $('#log'); if (cfg.debug) logEl.style.display = 'block';
@@ -519,19 +519,120 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+
+/* ---------------- realistic EventSub payload simulator ----------------
+   Exercises the exact handleEventSubMessage -> mapHypeTrain -> onTrain/onEnd path
+   used by real Twitch notifications. Never contacts Twitch or sends real events. */
+const SIM = { id: '', level: 1, progress: 0, goal: 100, contributions: [], ended: false };
+const SIM_NAMES = ['NovaFox', 'PixelPete', 'ToastyBeans', 'KiwiKat', 'Orbit', 'Lumi'];
+function simulatedEventSub(type, event) {
+  const envelope = {
+    metadata: { message_id: 'local-' + Date.now(), message_type: 'notification',
+      message_timestamp: new Date().toISOString(), subscription_type: type, subscription_version: '2' },
+    payload: { subscription: { type, version: '2', status: 'enabled',
+      condition: { broadcaster_user_id: 'simulated-broadcaster' },
+      transport: { method: 'websocket', session_id: 'local-test' } }, event }
+  };
+  console.log('[EventSub simulator] Incoming payload:', envelope);
+  handleEventSubMessage(envelope, null);
+  const status = document.getElementById('sim-status');
+  if (status) status.textContent = 'Processed ' + type.replace('channel.hype_train.', '') +
+    ' · Level ' + SIM.level + ' · ' + Math.round(SIM.progress / SIM.goal * 100) + '%';
+}
+function simEvent() {
+  return {
+    id: SIM.id,
+    broadcaster_user_id: 'simulated-broadcaster',
+    broadcaster_user_login: 'darkside07',
+    broadcaster_user_name: 'darkside07',
+    level: SIM.level, progress: SIM.progress, goal: SIM.goal,
+    total: SIM.progress, type: 'regular',
+    started_at: new Date(Date.now() - 120000).toISOString(),
+    expires_at: new Date(Date.now() + 300000).toISOString(),
+    top_contributions: SIM.contributions.map(c => ({ ...c })),
+    last_contribution: SIM.contributions[SIM.contributions.length - 1] || null
+  };
+}
+function runEventSubSimulation(action) {
+  if (action === 'start') {
+    SIM.id = 'local-eventsub-' + Date.now();
+    SIM.level = 1; SIM.progress = 10; SIM.goal = 100;
+    SIM.contributions = []; SIM.ended = false;
+    S.active = false;
+    simulatedEventSub('channel.hype_train.begin', simEvent());
+    return;
+  }
+  if (!SIM.id || SIM.ended) {
+    const status = document.getElementById('sim-status');
+    if (status) status.textContent = 'Click Start train first.';
+    return;
+  }
+  if (action === 'donate') {
+    const idx = SIM.contributions.length;
+    const name = SIM_NAMES[idx % SIM_NAMES.length];
+    SIM.contributions.push({
+      user_id: 'sim-' + idx, user_login: name.toLowerCase(),
+      user_name: name, type: idx % 2 ? 'subscription' : 'bits',
+      total: idx % 2 ? 1 : 100
+    });
+    SIM.progress += 28;
+    if (SIM.progress >= SIM.goal) {
+      SIM.progress -= SIM.goal; SIM.level += 1;
+    }
+    simulatedEventSub('channel.hype_train.progress', simEvent());
+  } else if (action === 'level') {
+    SIM.level += 1; SIM.progress = 5;
+    simulatedEventSub('channel.hype_train.progress', simEvent());
+  } else if (action === 'emote') {
+    const pax = [...S.pax.values()];
+    if (!pax.length) {
+      const status = document.getElementById('sim-status');
+      if (status) status.textContent = 'Add a passenger first.';
+      return;
+    }
+    const p = pax[0];
+    const event = {
+      broadcaster_user_id: 'simulated-broadcaster', chatter_user_id: p.id,
+      chatter_user_name: p.name, message_id: 'sim-chat-' + Date.now(),
+      message: { text: '!emote Kappa', fragments: [
+        { type: 'text', text: '!emote ' },
+        { type: 'emote', text: 'Kappa', emote: { id: '25', emote_set_id: '0' } }
+      ] }
+    };
+    handleEventSubMessage({ metadata: { message_type: 'notification' },
+      payload: { subscription: { type: 'channel.chat.message', version: '1' }, event } }, null);
+    const status = document.getElementById('sim-status');
+    if (status) status.textContent = 'Processed channel.chat.message · !emote Kappa';
+  } else if (action === 'end') {
+    const event = { ...simEvent(), ended_at: new Date().toISOString(),
+      cooldown_ends_at: new Date(Date.now() + 3600000).toISOString() };
+    simulatedEventSub('channel.hype_train.end', event);
+    SIM.ended = true;
+  }
+}
+
 /* ---------------- test mode ---------------- */
 const NAMES = ['PixelPete', 'NovaFox', 'Marzipan', 'ToastyBeans', 'Lumi', 'KiwiKat', 'Orbit', 'Bramble', 'Quokka', 'Zed'];
 const TEST_EMOTES = [['Kappa', 25], ['4Head', 354], ['Keepo', 1902], ['BibleThump', 86], ['WutFace', 28087]];
 let testPct = 0;
-if (cfg.test) {
+if (cfg.test || cfg.simulate) {
   document.body.classList.add('test-mode');
   connectPanel.style.display = 'none';
   $('#disconnectMini').style.display = 'none';
   $('#testbar').style.display = 'flex';
+  if (cfg.simulate) {
+    $('#testbar').querySelector('div').textContent = 'EVENTSUB SIMULATOR v4 · offline payloads';
+    const simStatus = document.createElement('div');
+    simStatus.id = 'sim-status';
+    simStatus.style.cssText = 'background:#20192b;color:#fff;padding:7px;border-radius:6px;font:12px system-ui;max-width:215px';
+    simStatus.textContent = 'Ready · Twitch not connected in simulator mode';
+    $('#testbar').appendChild(simStatus);
+  }
   $('#testbar').addEventListener('click', e => {
     const t = e.target.closest('button')?.dataset.t;
     if (!t) return;
-    console.log('[hypetrain test v3] Button:', t);
+    console.log('[hypetrain test v4] Button:', t);
+    if (cfg.simulate) { runEventSubSimulation(t); return; }
     const exp = new Date(Date.now() + 300000).toISOString();
     if (t === 'start') { testPct = 10; S.active = false; onTrain({ id: 'test-' + Date.now(), level: 1, percent: 10, expiresAt: exp, trainType: 'regular' }); }
     if (t === 'level' && S.active) {
@@ -558,7 +659,7 @@ if (cfg.test) {
 (async function boot() {
   await loadAssets();
   requestAnimationFrame(frame);
-  if (!cfg.test) {
+  if (!cfg.test && !cfg.simulate) {
     const returned = handleOAuthReturn();
     if (returned && !twitchToken) { setConnectedUI(false); }
     else if (location.protocol !== 'https:' && !cfg.debug) setConnectStatus('This OBS-only overlay must be hosted on HTTPS.');
