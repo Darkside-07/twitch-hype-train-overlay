@@ -277,6 +277,9 @@ function onTrain(d) {
     const id = pick(d, `top.${k}.userId`); if (id) addPax(id, pick(d, `top.${k}.user`) || pick(d, `top.${k}.userName`), +pick(d, `top.${k}.total`) || 0, true);
   });
   renderPax(); hudRender();
+  if (location.search.includes('simulate=1')) {
+    console.log('[V7 passenger audit]', {passengers: S.pax.size, ids: [...S.pax.keys()], capacity: MAX_PAX, contributors: (d.contributors || []).length});
+  }
 }
 function onEnd(d) {
   if (!S.active) return;
@@ -537,7 +540,7 @@ function frame(now) {
    Exercises the exact handleEventSubMessage -> mapHypeTrain -> onTrain/onEnd path
    used by real Twitch notifications. Never contacts Twitch or sends real events. */
 const SIM = { id: '', level: 1, progress: 0, goal: 100, contributions: [], ended: false, emoteClicks: 0 };
-const SIM_NAMES = ['NovaFox', 'PixelPete', 'ToastyBeans', 'KiwiKat', 'Orbit', 'Lumi'];
+const SIM_NAMES = ['NovaFox', 'PixelPete', 'ToastyBeans', 'KiwiKat', 'Orbit', 'Lumi', 'Starling', 'Mochi', 'Cloud', 'Comet'];
 function simulatedEventSub(type, event) {
   const envelope = {
     metadata: { message_id: 'local-' + Date.now(), message_type: 'notification',
@@ -549,8 +552,11 @@ function simulatedEventSub(type, event) {
   console.log('[EventSub simulator] Incoming payload:', envelope);
   handleEventSubMessage(envelope, null);
   const status = document.getElementById('sim-status');
-  if (status) status.textContent = 'Processed ' + type.replace('channel.hype_train.', '') +
-    ' · Level ' + SIM.level + ' · ' + Math.round(SIM.progress / SIM.goal * 100) + '%';
+  if (status) status.textContent = 'V7 · ' + type.replace('channel.hype_train.', '') +
+    ' · simulated contributors: ' + SIM.contributions.length +
+    ' · passengers tracked: ' + S.pax.size +
+    ' · capacity: ' + MAX_PAX +
+    ' · Level ' + SIM.level;
 }
 function simEvent() {
   return {
@@ -641,7 +647,7 @@ if (cfg.test || cfg.simulate) {
   $('#disconnectMini').style.display = 'none';
   $('#testbar').style.display = 'flex';
   if (cfg.simulate) {
-    $('#testbar').querySelector('div').textContent = 'EVENTSUB SIMULATOR v5 · offline payloads';
+    $('#testbar').querySelector('div').textContent = 'EVENTSUB SIMULATOR v7 · offline payloads';
     const simStatus = document.createElement('div');
     simStatus.id = 'sim-status';
     simStatus.style.cssText = 'background:#20192b;color:#fff;padding:7px;border-radius:6px;font:12px system-ui;max-width:215px';
