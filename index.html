@@ -49,6 +49,11 @@
   #log { position:absolute; left:8px; bottom:8px; max-width:560px; max-height:40%; overflow:auto; display:none;
          padding:8px 10px; border-radius:8px; background:#000b; color:#9f9; font:12px/1.4 monospace; white-space:pre-wrap; z-index:9; }
   #testbar { position:absolute; right:10px; top:10px; display:none; flex-direction:column; gap:6px; z-index:9; }
+  /* OBS captures a clean overlay. Test controls appear only while interacting with it. */
+  body.test-mode #testbar { display:flex; opacity:0; pointer-events:none; transition:opacity .15s; }
+  body.test-mode:hover #testbar, body.test-mode:focus-within #testbar { opacity:1; pointer-events:auto; }
+  body.test-mode #testbar button { background:#332446; color:#fff; box-shadow:0 2px 8px #0007; }
+  body.test-mode #testbar button:hover { background:#9147ff; }
   #testbar button { padding:8px 12px; font:600 13px system-ui; border-radius:6px; border:0; cursor:pointer; }
   #connectPanel { position:absolute; z-index:20; left:50%; top:50%; transform:translate(-50%,-50%); width:min(520px,calc(100vw - 32px));
     padding:22px; border:1px solid #6c4b91; border-radius:14px; background:rgba(18,14,26,.96); color:#fff;
@@ -86,7 +91,7 @@
 <div id="log"></div>
 <div id="testbar">
   <button data-t="start">Start train</button>
-  <button data-t="donate">Donation (new passenger)</button>
+  <button data-t="donate">Add progress + passenger</button>\n  <button data-t="level">Level up</button>
   <button data-t="emote">Random passenger changes emote</button>
   <button data-t="end">End train</button>
 </div>
@@ -107,7 +112,7 @@ const cfg = {
   scale: +Q.get('scale') || DEFAULTS.scale, margin: +Q.get('margin') || DEFAULTS.margin,
   sway: Q.get('sway') !== null ? +Q.get('sway') : (DEFAULTS.sway === '' ? null : +DEFAULTS.sway),
   period: +Q.get('period') || DEFAULTS.period, maxCars: +Q.get('maxCars') || DEFAULTS.maxCars, names: Q.get('names') !== '0',
-  hud: Q.get('hud') !== '0', endHold: +Q.get('endHold') || 6000, test: Q.get('test') === '1', debug: Q.get('debug') === '1',
+  hud: Q.get('hud') !== '0', endHold: +Q.get('endHold') || 6000, test: Q.get('test') === '1', settings: Q.get('settings') === '1', debug: Q.get('debug') === '1',
 };
 const $ = s => document.querySelector(s);
 const logEl = $('#log'); if (cfg.debug) logEl.style.display = 'block';
@@ -348,7 +353,7 @@ async function validateTwitchToken() {
 }
 function setConnectedUI(connected) {
   connectPanel.style.display = connected ? 'none' : 'block';
-  $('#disconnectMini').style.display = connected ? 'block' : 'none';
+  $('#disconnectMini').style.display = connected && cfg.settings ? 'block' : 'none';
   $('#twitchLogout').style.display = connected ? 'inline-block' : 'none';
   $('#twitchLogin').style.display = connected ? 'none' : 'inline-block';
 }
@@ -523,6 +528,10 @@ if (cfg.test) {
     const t = e.target.dataset.t;
     const exp = new Date(Date.now() + 300000).toISOString();
     if (t === 'start') { testPct = 10; dispatch('Twitch', 'HypeTrainStart', { id: 'test', level: 1, percent: 10, expiresAt: exp, trainType: 'regular' }); }
+    if (t === 'level' && S.active) {
+      testPct = 0;
+      dispatch('Twitch', 'HypeTrainLevelUp', { id:'test', level:S.level + 1, percent:0, expiresAt:exp });
+    }
     if (t === 'donate' && S.active) {
       const n = NAMES[Math.floor(Math.random() * NAMES.length)] + Math.floor(Math.random() * 99);
       dispatch('Twitch', 'Cheer', { user: { id: 'u_' + n, name: n }, bits: 100, anonymous: false });
