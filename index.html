@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Twitch Hype Train Overlay — OBS Only</title>
+<title>Multi-streamer V8 — Twitch Hype Train Overlay — OBS Only</title>
 <!-- Browser-only Twitch EventSub overlay. Hosted as a static HTTPS page. -->
 <style>
   * { box-sizing:border-box; }
@@ -90,7 +90,7 @@
 </div>
 <div id="log"></div>
 <div id="testbar">
-  <div style="background:#332446;color:white;border-radius:6px;padding:7px 10px;font:12px system-ui">TEST BUILD v6 · no Twitch events</div>
+  <div style="background:#332446;color:white;border-radius:6px;padding:7px 10px;font:12px system-ui">TEST BUILD v8 · no Twitch events</div>
   <button data-t="start">Start train</button>
   <button data-t="donate">Add progress + passenger</button>
   <button data-t="level">Level up</button>
@@ -120,7 +120,7 @@ const $ = s => document.querySelector(s);
 const logEl = $('#log'); if (cfg.debug) logEl.style.display = 'block';
 function log(m) { console.log('[hypetrain]', m); logEl.textContent += m + '\n'; logEl.scrollTop = 1e9; }
 function load(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } }
-function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function save(k, v) { try { localStorage.setItem(scopedKey(k), JSON.stringify(v)); } catch (e) {} }
 
 /* ---------------- geometry (measured from the reference picture) ----------------
    Units are "reference pixels". Local x = 0 is the left edge of the engine; carriages
@@ -283,7 +283,7 @@ function onTrain(d) {
 }
 function onEnd(d) {
   if (!S.active) return;
-  S.active = false; S.expires = null; try { localStorage.removeItem('ht.train'); } catch (_) {}
+  S.active = false; S.expires = null; try { localStorage.removeItem(scopedKey('ht.train')); } catch (_) {}
   if (cfg.hud) { hud.querySelector('.title').textContent = 'Hype Train Complete · Level ' + (d.level || S.level);
     hud.querySelector('.sub').textContent = 'Thank you, passengers!'; hud.querySelector('.fill').style.width = '100%'; }
   endTimer = setTimeout(() => { if (T.phase === 'run') { T.phase = 'out'; T.vx = 0; hud.classList.remove('on'); } }, cfg.endHold);
@@ -357,6 +357,7 @@ async function validateTwitchToken() {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error('Your Twitch login has expired. Please log in again.');
   if (!data.scopes || !data.scopes.includes('channel:read:hype_train')) throw new Error('Missing channel:read:hype_train permission. Disconnect and log in again.');
+  if (data.client_id !== twitchClientId) throw new Error('Saved login belongs to a different Twitch application. Please log in again.');
   return { id: data.user_id, login: data.login, scopes: data.scopes };
 }
 function setConnectedUI(connected) {
@@ -368,12 +369,19 @@ function setConnectedUI(connected) {
 $('#saveClientId').addEventListener('click', () => {
   const value = $('#twitchClientId').value.trim();
   if (!/^[a-z0-9]+$/i.test(value)) return setConnectStatus('Please enter a valid Twitch Client ID.');
+  if (twitchClientId !== value) {
+    twitchToken = ''; broadcaster = null; localStorage.removeItem(AUTH_KEY);
+    sessionStorage.removeItem('ht.active_broadcaster');
+    if (eventSocket) { eventSocket.onclose = null; eventSocket.close(); eventSocket = null; }
+    setConnectedUI(false);
+  }
   twitchClientId = value; localStorage.setItem(CLIENT_KEY, value);
   setConnectStatus('Client ID saved. Click Login with Twitch.');
 });
 $('#twitchLogin').addEventListener('click', () => {
   const value = $('#twitchClientId').value.trim();
   if (!/^[a-z0-9]+$/i.test(value)) return setConnectStatus('Enter and save your Twitch Client ID first.');
+  if (twitchClientId !== value) { twitchToken = ''; localStorage.removeItem(AUTH_KEY); }
   twitchClientId = value; localStorage.setItem(CLIENT_KEY, value);
   if (location.protocol !== 'https:') return setConnectStatus('This browser-only version must be hosted on an HTTPS page (such as GitHub Pages).');
   const state = randomState(); sessionStorage.setItem('ht.twitch.oauth_state', state);
@@ -382,6 +390,7 @@ $('#twitchLogin').addEventListener('click', () => {
 });
 function disconnectTwitch() {
   twitchToken = ''; broadcaster = null; localStorage.removeItem(AUTH_KEY);
+  sessionStorage.removeItem('ht.active_broadcaster');
   if (eventSocket) { eventSocket.onclose = null; eventSocket.close(); eventSocket = null; }
   setConnectedUI(false); setConnectStatus('Disconnected from Twitch.');
 }
@@ -477,6 +486,15 @@ async function startBrowserTwitch() {
   try {
     setConnectStatus('Checking Twitch login…');
     broadcaster = await validateTwitchToken();
+    const accountKey = twitchClientId + ':' + broadcaster.id;
+    if (sessionStorage.getItem('ht.active_broadcaster') !== accountKey) {
+      sessionStorage.setItem('ht.active_broadcaster', accountKey);
+      S.active = false; S.pax.clear(); paxEls.clear();
+      prefs = load('ht.prefs', {});
+      // Never display a previous broadcaster's train after an account switch.
+      const oldTrain = load('ht.train', null);
+      if (oldTrain && oldTrain.id) localStorage.removeItem(scopedKey('ht.train'));
+    }
     setConnectStatus('Logged in as ' + broadcaster.login + '. Connecting to Hype Train events…');
     setConnectedUI(true); connectEventSub();
   } catch (e) {
@@ -552,7 +570,7 @@ function simulatedEventSub(type, event) {
   console.log('[EventSub simulator] Incoming payload:', envelope);
   handleEventSubMessage(envelope, null);
   const status = document.getElementById('sim-status');
-  if (status) status.textContent = 'V7 · ' + type.replace('channel.hype_train.', '') +
+  if (status) status.textContent = 'V8 · ' + type.replace('channel.hype_train.', '') +
     ' · simulated contributors: ' + SIM.contributions.length +
     ' · passengers tracked: ' + S.pax.size +
     ' · capacity: ' + MAX_PAX +
@@ -647,7 +665,7 @@ if (cfg.test || cfg.simulate) {
   $('#disconnectMini').style.display = 'none';
   $('#testbar').style.display = 'flex';
   if (cfg.simulate) {
-    $('#testbar').querySelector('div').textContent = 'EVENTSUB SIMULATOR v7 · offline payloads';
+    $('#testbar').querySelector('div').textContent = 'EVENTSUB SIMULATOR v8 · offline payloads';
     const simStatus = document.createElement('div');
     simStatus.id = 'sim-status';
     simStatus.style.cssText = 'background:#20192b;color:#fff;padding:7px;border-radius:6px;font:12px system-ui;max-width:215px';
