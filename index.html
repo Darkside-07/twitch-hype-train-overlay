@@ -90,7 +90,7 @@
 </div>
 <div id="log"></div>
 <div id="testbar">
-  <div style="background:#332446;color:white;border-radius:6px;padding:7px 10px;font:12px system-ui">TEST BUILD v4 · no Twitch events</div>
+  <div style="background:#332446;color:white;border-radius:6px;padding:7px 10px;font:12px system-ui">TEST BUILD v5 · no Twitch events</div>
   <button data-t="start">Start train</button>
   <button data-t="donate">Add progress + passenger</button>
   <button data-t="level">Level up</button>
@@ -523,7 +523,7 @@ function frame(now) {
 /* ---------------- realistic EventSub payload simulator ----------------
    Exercises the exact handleEventSubMessage -> mapHypeTrain -> onTrain/onEnd path
    used by real Twitch notifications. Never contacts Twitch or sends real events. */
-const SIM = { id: '', level: 1, progress: 0, goal: 100, contributions: [], ended: false };
+const SIM = { id: '', level: 1, progress: 0, goal: 100, contributions: [], ended: false, emoteClicks: 0 };
 const SIM_NAMES = ['NovaFox', 'PixelPete', 'ToastyBeans', 'KiwiKat', 'Orbit', 'Lumi'];
 function simulatedEventSub(type, event) {
   const envelope = {
@@ -557,7 +557,7 @@ function runEventSubSimulation(action) {
   if (action === 'start') {
     SIM.id = 'local-eventsub-' + Date.now();
     SIM.level = 1; SIM.progress = 10; SIM.goal = 100;
-    SIM.contributions = []; SIM.ended = false;
+    SIM.contributions = []; SIM.ended = false; SIM.emoteClicks = 0;
     S.active = false;
     simulatedEventSub('channel.hype_train.begin', simEvent());
     return;
@@ -590,19 +590,26 @@ function runEventSubSimulation(action) {
       if (status) status.textContent = 'Add a passenger first.';
       return;
     }
-    const p = pax[0];
+    // Rotate through actual Twitch emote IDs and passengers on every click.
+    // First click changes from the default emoji to Kappa, second to Keepo, etc.
+    const emotes = [ ['Kappa', '25'], ['Keepo', '1902'], ['4Head', '354'],
+      ['BibleThump', '86'], ['WutFace', '28087'] ];
+    const click = SIM.emoteClicks++;
+    const p = pax[click % pax.length];
+    const [name, emoteId] = emotes[click % emotes.length];
     const event = {
       broadcaster_user_id: 'simulated-broadcaster', chatter_user_id: p.id,
       chatter_user_name: p.name, message_id: 'sim-chat-' + Date.now(),
-      message: { text: '!emote Kappa', fragments: [
+      message: { text: '!emote ' + name, fragments: [
         { type: 'text', text: '!emote ' },
-        { type: 'emote', text: 'Kappa', emote: { id: '25', emote_set_id: '0' } }
+        { type: 'emote', text: name, emote: { id: emoteId, emote_set_id: '0' } }
       ] }
     };
     handleEventSubMessage({ metadata: { message_type: 'notification' },
       payload: { subscription: { type: 'channel.chat.message', version: '1' }, event } }, null);
     const status = document.getElementById('sim-status');
-    if (status) status.textContent = 'Processed channel.chat.message · !emote Kappa';
+    if (status) status.textContent = 'Chat !emote ' + name + ' → ' + p.name + ' (passenger #' + (click % pax.length + 1) + ')';
+    console.log('[EventSub simulator] Emote changed:', p.name, name, emoteId);
   } else if (action === 'end') {
     const event = { ...simEvent(), ended_at: new Date().toISOString(),
       cooldown_ends_at: new Date(Date.now() + 3600000).toISOString() };
@@ -621,7 +628,7 @@ if (cfg.test || cfg.simulate) {
   $('#disconnectMini').style.display = 'none';
   $('#testbar').style.display = 'flex';
   if (cfg.simulate) {
-    $('#testbar').querySelector('div').textContent = 'EVENTSUB SIMULATOR v4 · offline payloads';
+    $('#testbar').querySelector('div').textContent = 'EVENTSUB SIMULATOR v5 · offline payloads';
     const simStatus = document.createElement('div');
     simStatus.id = 'sim-status';
     simStatus.style.cssText = 'background:#20192b;color:#fff;padding:7px;border-radius:6px;font:12px system-ui;max-width:215px';
