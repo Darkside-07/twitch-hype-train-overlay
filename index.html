@@ -50,8 +50,8 @@
          padding:8px 10px; border-radius:8px; background:#000b; color:#9f9; font:12px/1.4 monospace; white-space:pre-wrap; z-index:9; }
   #testbar { position:absolute; right:10px; top:10px; display:none; flex-direction:column; gap:6px; z-index:9; }
   /* OBS captures a clean overlay. Test controls appear only while interacting with it. */
-  body.test-mode #testbar { display:flex; opacity:0; pointer-events:none; transition:opacity .15s; }
-  body.test-mode:hover #testbar, body.test-mode:focus-within #testbar { opacity:1; pointer-events:auto; }
+  body.test-mode #testbar { display:flex; opacity:1; pointer-events:auto; }
+  
   body.test-mode #testbar button { background:#332446; color:#fff; box-shadow:0 2px 8px #0007; }
   body.test-mode #testbar button:hover { background:#9147ff; }
   #testbar button { padding:8px 12px; font:600 13px system-ui; border-radius:6px; border:0; cursor:pointer; }
@@ -91,7 +91,8 @@
 <div id="log"></div>
 <div id="testbar">
   <button data-t="start">Start train</button>
-  <button data-t="donate">Add progress + passenger</button>\n  <button data-t="level">Level up</button>
+  <button data-t="donate">Add progress + passenger</button>
+  <button data-t="level">Level up</button>
   <button data-t="emote">Random passenger changes emote</button>
   <button data-t="end">End train</button>
 </div>
@@ -522,29 +523,31 @@ const NAMES = ['PixelPete', 'NovaFox', 'Marzipan', 'ToastyBeans', 'Lumi', 'KiwiK
 const TEST_EMOTES = [['Kappa', 25], ['4Head', 354], ['Keepo', 1902], ['BibleThump', 86], ['WutFace', 28087]];
 let testPct = 0;
 if (cfg.test) {
+  document.body.classList.add('test-mode');
   connectPanel.style.display = 'none';
+  $('#disconnectMini').style.display = 'none';
   $('#testbar').style.display = 'flex';
   $('#testbar').addEventListener('click', e => {
     const t = e.target.dataset.t;
     const exp = new Date(Date.now() + 300000).toISOString();
-    if (t === 'start') { testPct = 10; dispatch('Twitch', 'HypeTrainStart', { id: 'test', level: 1, percent: 10, expiresAt: exp, trainType: 'regular' }); }
+    if (t === 'start') { testPct = 10; onTrain( { id: 'test', level: 1, percent: 10, expiresAt: exp, trainType: 'regular' }); }
     if (t === 'level' && S.active) {
       testPct = 0;
-      dispatch('Twitch', 'HypeTrainLevelUp', { id:'test', level:S.level + 1, percent:0, expiresAt:exp });
+      onTrain( { id:'test', level:S.level + 1, percent:0, expiresAt:exp });
     }
     if (t === 'donate' && S.active) {
       const n = NAMES[Math.floor(Math.random() * NAMES.length)] + Math.floor(Math.random() * 99);
-      dispatch('Twitch', 'Cheer', { user: { id: 'u_' + n, name: n }, bits: 100, anonymous: false });
-      testPct += 20; let type = 'HypeTrainUpdate', lvl = S.level;
-      if (testPct >= 100) { testPct -= 100; lvl++; type = 'HypeTrainLevelUp'; }
-      dispatch('Twitch', type, { id: 'test', level: lvl, percent: testPct, expiresAt: exp });
+      addPax('u_' + n, n, 100, false); renderPax();
+      testPct += 20; let lvl = S.level;
+      if (testPct >= 100) { testPct -= 100; lvl++; }
+      onTrain( { id: 'test', level: lvl, percent: testPct, expiresAt: exp });
     }
     if (t === 'emote' && S.pax.size) {
       const ps = [...S.pax.values()], p = ps[Math.floor(Math.random() * ps.length)], [nm, id] = TEST_EMOTES[Math.floor(Math.random() * TEST_EMOTES.length)];
-      dispatch('Twitch', 'ChatMessage', { user: { id: p.id, name: p.name }, text: cfg.cmd + ' ' + nm,
+      onChat( { user: { id: p.id, name: p.name }, text: cfg.cmd + ' ' + nm,
         emotes: [{ Type: 'Twitch', Name: nm, StartIndex: cfg.cmd.length + 1, EndIndex: cfg.cmd.length + nm.length, ImageUrl: `https://static-cdn.jtvnw.net/emoticons/v2/${id}/default/dark/1.0` }] });
     }
-    if (t === 'end' && S.active) dispatch('Twitch', 'HypeTrainEnd', { level: S.level });
+    if (t === 'end' && S.active) onEnd( { level: S.level });
   });
 }
 
